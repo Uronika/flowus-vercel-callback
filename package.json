@@ -1,17 +1,12 @@
 {
   "name": "flowus-vercel-callback",
   "version": "1.0.0",
-  "description": "FlowUs OAuth callback function for Vercel",
+  "description": "Minimal Vercel callback for FlowUs",
   "type": "module",
-  "scripts": {
-    "start": "node api/flowus.js"
-  },
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   },
   "dependencies": {
     "axios": "^1.6.0"
-  },
-  "author": "Uronika",
-  "license": "MIT"
+  }
 }
