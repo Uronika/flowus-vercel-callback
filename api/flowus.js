@@ -5,6 +5,13 @@ export async function GET(request) {
   const error = url.searchParams.get("error");
   const errorDescription = url.searchParams.get("error_description");
 
+  const FLOWUS_API_BASE = process.env.FLOWUS_API_BASE || "https://api.flowus.cn";
+  const TOKEN_URL = `${FLOWUS_API_BASE}/oauth/token`;
+
+  const clientId = process.env.FLOWUS_CLIENT_ID;
+  const clientSecret = process.env.FLOWUS_CLIENT_SECRET;
+  const redirectUri = process.env.FLOWUS_REDIRECT_URI;
+
   if (error) {
     return htmlResponse(`
       <h2>FlowUs 授权失败</h2>
@@ -16,85 +23,85 @@ export async function GET(request) {
   if (!code) {
     return htmlResponse(`
       <h2>缺少授权码</h2>
-      <p>当前请求没有携带 code 参数，无法继续交换 access token。</p>
+      <p>当前请求没有携带 <code>code</code> 参数。</p>
+      <p>请从 FlowUs 授权入口重新发起授权。</p>
     `, 400);
   }
 
-  const tokenUrl = process.env.FLOWUS_TOKEN_URL;
-  const clientId = process.env.FLOWUS_CLIENT_ID;
-  const clientSecret = process.env.FLOWUS_CLIENT_SECRET;
-  const redirectUri = process.env.FLOWUS_REDIRECT_URI;
-
-  if (!tokenUrl || !clientId || !clientSecret || !redirectUri) {
+  if (!clientId || !clientSecret || !redirectUri) {
     return htmlResponse(`
-      <h2>服务器配置不完整</h2>
-      <p>请在 Vercel Environment Variables 中配置：</p>
+      <h2>服务器环境变量未配置完整</h2>
+      <p>请在 Vercel 项目里补齐以下变量：</p>
       <ul>
-        <li>FLOWUS_TOKEN_URL</li>
-        <li>FLOWUS_CLIENT_ID</li>
-        <li>FLOWUS_CLIENT_SECRET</li>
-        <li>FLOWUS_REDIRECT_URI</li>
+        <li><code>FLOWUS_CLIENT_ID</code></li>
+        <li><code>FLOWUS_CLIENT_SECRET</code></li>
+        <li><code>FLOWUS_REDIRECT_URI</code></li>
       </ul>
     `, 500);
   }
 
-  // 这里按 OAuth 2.0 授权码流程，向 token endpoint 发起服务端换 token 请求
-  // token endpoint 的精确 URL / 兼容字段，以 FlowUs 官方文档为准
-  const body = new URLSearchParams({
-    grant_type: "authorization_code",
-    code,
-    client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uri: redirectUri
-  });
-
-  let tokenResp;
-  let tokenText = "";
+  let tokenResponse;
+  let tokenDataText = "";
 
   try {
-    tokenResp = await fetch(tokenUrl, {
+    tokenResponse = await fetch(TOKEN_URL, {
       method: "POST",
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/json"
       },
-      body
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri
+      })
     });
 
-    tokenText = await tokenResp.text();
+    tokenDataText = await tokenResponse.text();
   } catch (err) {
     return htmlResponse(`
-      <h2>请求 token endpoint 失败</h2>
+      <h2>请求 FlowUs Token 接口失败</h2>
       <pre>${escapeHtml(String(err))}</pre>
     `, 500);
   }
 
-  let tokenJson = null;
+  let tokenData;
   try {
-    tokenJson = JSON.parse(tokenText);
+    tokenData = JSON.parse(tokenDataText);
   } catch {
-    // 保留原始文本，下面展示
-  }
-
-  if (!tokenResp.ok) {
     return htmlResponse(`
-      <h2>FlowUs token 交换失败</h2>
-      <p><strong>HTTP 状态:</strong> ${tokenResp.status}</p>
-      <p><strong>state:</strong> ${escapeHtml(state || "")}</p>
-      <h3>返回内容</h3>
-      <pre>${escapeHtml(tokenText)}</pre>
+      <h2>Token 接口返回了非 JSON 内容</h2>
+      <p><strong>HTTP 状态:</strong> ${tokenResponse.status}</p>
+      <pre>${escapeHtml(tokenDataText)}</pre>
     `, 500);
   }
 
-  // 现在先不把 token 明文展示到页面，避免泄漏
-  // 先只做“成功到达并成功交换”的验证
+  if (!tokenResponse.ok) {
+    return htmlResponse(`
+      <h2>FlowUs Token 交换失败</h2>
+      <p><strong>HTTP 状态:</strong> ${tokenResponse.status}</p>
+      <p><strong>state:</strong> ${escapeHtml(state || "")}</p>
+      <pre>${escapeHtml(JSON.stringify(tokenData, null, 2))}</pre>
+    `, 500);
+  }
+
+  const accessToken = tokenData.access_token;
+  const refreshToken = tokenData.refresh_token;
+
   return htmlResponse(`
     <h2>FlowUs 授权成功</h2>
-    <p>已收到授权码，并成功完成 token 交换。</p>
+    <p>已收到 <code>code</code>，并成功交换访问令牌。</p>
     <p><strong>state:</strong> ${escapeHtml(state || "")}</p>
-    <p>你现在可以关闭这个页面，回到客户端继续后续流程。</p>
+    <p>你现在可以关闭这个页面，回到你的客户端程序。</p>
+
     <details>
-      <summary>调试信息（谨慎展开）</summary>
-      <pre>${escapeHtml(JSON.stringify(maskTokenPayload(tokenJson), null, 2))}</pre>
+      <summary>调试信息</summary>
+      <pre>${escapeHtml(JSON.stringify(maskSecrets({
+        ...tokenData,
+        access_token: accessToken,
+        refresh_token: refreshToken
+      }), null, 2))}</pre>
     </details>
   `, 200);
 }
@@ -110,21 +117,27 @@ function htmlResponse(innerHtml, status = 200) {
         <style>
           body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            max-width: 720px;
+            max-width: 760px;
             margin: 40px auto;
             padding: 0 16px;
             line-height: 1.6;
           }
-          h2 { margin-bottom: 12px; }
-          pre {
+          code, pre {
             background: #f6f8fa;
+            border-radius: 6px;
+          }
+          code {
+            padding: 2px 6px;
+          }
+          pre {
             padding: 12px;
-            border-radius: 8px;
             overflow: auto;
             white-space: pre-wrap;
             word-break: break-word;
           }
-          details { margin-top: 16px; }
+          details {
+            margin-top: 16px;
+          }
         </style>
       </head>
       <body>${innerHtml}</body>
@@ -147,10 +160,8 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function maskTokenPayload(payload) {
-  if (!payload || typeof payload !== "object") {
-    return payload;
-  }
+function maskSecrets(payload) {
+  if (!payload || typeof payload !== "object") return payload;
 
   const cloned = { ...payload };
 
