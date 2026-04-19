@@ -6,9 +6,9 @@ export async function POST(request) {
 
   let payload;
   try {
-    payload = await request.json();
+    payload = await readJsonBody(request);
   } catch {
-    return jsonResponse(errorBody("invalid_json", "请求体必须是 JSON。"), 400);
+    return jsonResponse(errorBody("invalid_json", "Request body must be JSON."), 400);
   }
 
   try {
@@ -39,7 +39,7 @@ export async function POST(request) {
       }
 
       default:
-        return jsonResponse(errorBody("unsupported_action", `不支持的代理操作：${payload.action || "<empty>"}`), 400);
+        return jsonResponse(errorBody("unsupported_action", `Unsupported proxy action: ${payload.action || "<empty>"}`), 400);
     }
   } catch (error) {
     return jsonResponse(errorBody(error.code || "proxy_error", error.message), error.status || 500);
@@ -71,7 +71,7 @@ async function forwardFlowUs(path, { method, body }) {
     return jsonResponse(
       errorBody(
         "flowus_network_error",
-        `Vercel 后端无法连接 FlowUs API：${cause?.cause?.code || cause?.code || cause?.message || String(cause)}`
+        `Vercel backend could not connect to FlowUs API: ${cause?.cause?.code || cause?.code || cause?.message || String(cause)}`
       ),
       502
     );
@@ -87,16 +87,16 @@ function authorize(request) {
   if (!expected) {
     return {
       status: 500,
-      body: errorBody("proxy_secret_missing", "服务端缺少 GTD_PROXY_SECRET 或 FLOWUS_PROXY_SECRET。")
+      body: errorBody("proxy_secret_missing", "Server is missing GTD_PROXY_SECRET or FLOWUS_PROXY_SECRET.")
     };
   }
 
-  const header = request.headers.get("authorization") || "";
+  const header = getHeader(request, "authorization") || "";
   const actual = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
   if (actual !== expected) {
     return {
       status: 401,
-      body: errorBody("unauthorized", "代理鉴权失败。")
+      body: errorBody("unauthorized", "Proxy authorization failed.")
     };
   }
 
@@ -106,7 +106,7 @@ function authorize(request) {
 function getFlowUsToken() {
   const token = process.env.FLOWUS_ACCESS_TOKEN || process.env.FLOWUS_TOKEN || process.env.FLOWUS_BOT_TOKEN;
   if (!token) {
-    const error = new Error("服务端缺少 FLOWUS_ACCESS_TOKEN、FLOWUS_TOKEN 或 FLOWUS_BOT_TOKEN。");
+    const error = new Error("Server is missing FLOWUS_ACCESS_TOKEN, FLOWUS_TOKEN, or FLOWUS_BOT_TOKEN.");
     error.code = "flowus_token_missing";
     error.status = 500;
     throw error;
@@ -123,11 +123,40 @@ function getFlowUsRestBase() {
 
 function assertId(value, name) {
   if (!value || typeof value !== "string") {
-    const error = new Error(`缺少 ${name}。`);
+    const error = new Error(`Missing ${name}.`);
     error.code = "invalid_args";
     error.status = 400;
     throw error;
   }
+}
+
+async function readJsonBody(request) {
+  if (typeof request.json === "function") {
+    return request.json();
+  }
+
+  const text = await readTextBody(request);
+  return JSON.parse(text);
+}
+
+async function readTextBody(request) {
+  if (typeof request.text === "function") {
+    return request.text();
+  }
+
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function getHeader(request, name) {
+  const headers = request.headers || {};
+  if (typeof headers.get === "function") {
+    return headers.get(name);
+  }
+  return headers[name] || headers[name.toLowerCase()] || "";
 }
 
 function parseJsonOrText(text) {
