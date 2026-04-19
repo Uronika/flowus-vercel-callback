@@ -147,9 +147,12 @@ function errorBody(code, message) {
 }
 
 function jsonResponse(body, status = 200) {
-  return Response.json(body, {
+  return new Response(JSON.stringify(body), {
     status,
-    headers: corsHeaders()
+    headers: {
+      ...corsHeaders(),
+      "Content-Type": "application/json; charset=utf-8"
+    }
   });
 }
 
