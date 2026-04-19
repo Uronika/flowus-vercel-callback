@@ -1,65 +1,81 @@
-export async function POST(request) {
+export default async function handler(request, response) {
+  setCorsHeaders(response);
+
+  if (request.method === "OPTIONS") {
+    response.statusCode = 204;
+    response.end();
+    return;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, errorBody("method_not_allowed", "Use POST."), 405);
+    return;
+  }
+
   const authError = authorize(request);
   if (authError) {
-    return jsonResponse(authError.body, authError.status);
+    sendJson(response, authError.body, authError.status);
+    return;
   }
 
   let payload;
   try {
     payload = await readJsonBody(request);
   } catch {
-    return jsonResponse(errorBody("invalid_json", "Request body must be JSON."), 400);
+    sendJson(response, errorBody("invalid_json", "Request body must be JSON."), 400);
+    return;
   }
 
   try {
-    switch (payload.action) {
-      case "queryDatabase":
-        assertId(payload.databaseId, "databaseId");
-        return forwardFlowUs(`/databases/${encodeURIComponent(payload.databaseId)}/query`, {
-          method: "POST",
-          body: payload.body || {}
-        });
-
-      case "getPage":
-        assertId(payload.pageId, "pageId");
-        return forwardFlowUs(`/pages/${encodeURIComponent(payload.pageId)}`, {
-          method: "GET"
-        });
-
-      case "getBlockChildren": {
-        assertId(payload.blockId, "blockId");
-        const params = new URLSearchParams();
-        params.set("page_size", String(payload.pageSize || 100));
-        if (payload.startCursor) {
-          params.set("start_cursor", payload.startCursor);
-        }
-        return forwardFlowUs(`/blocks/${encodeURIComponent(payload.blockId)}/children?${params.toString()}`, {
-          method: "GET"
-        });
-      }
-
-      default:
-        return jsonResponse(errorBody("unsupported_action", `Unsupported proxy action: ${payload.action || "<empty>"}`), 400);
-    }
+    const result = await handleAction(payload);
+    sendJson(response, result.body, result.status);
   } catch (error) {
-    return jsonResponse(errorBody(error.code || "proxy_error", error.message), error.status || 500);
+    sendJson(response, errorBody(error.code || "proxy_error", error.message), error.status || 500);
   }
 }
 
-export async function OPTIONS() {
-  return new Response(null, {
-    status: 204,
-    headers: corsHeaders()
-  });
+async function handleAction(payload) {
+  switch (payload.action) {
+    case "queryDatabase":
+      assertId(payload.databaseId, "databaseId");
+      return forwardFlowUs(`/databases/${encodeURIComponent(payload.databaseId)}/query`, {
+        method: "POST",
+        body: payload.body || {}
+      });
+
+    case "getPage":
+      assertId(payload.pageId, "pageId");
+      return forwardFlowUs(`/pages/${encodeURIComponent(payload.pageId)}`, {
+        method: "GET"
+      });
+
+    case "getBlockChildren": {
+      assertId(payload.blockId, "blockId");
+      const params = new URLSearchParams();
+      params.set("page_size", String(payload.pageSize || 100));
+      if (payload.startCursor) {
+        params.set("start_cursor", payload.startCursor);
+      }
+      return forwardFlowUs(`/blocks/${encodeURIComponent(payload.blockId)}/children?${params.toString()}`, {
+        method: "GET"
+      });
+    }
+
+    default:
+      return {
+        status: 400,
+        body: errorBody("unsupported_action", `Unsupported proxy action: ${payload.action || "<empty>"}`)
+      };
+  }
 }
 
 async function forwardFlowUs(path, { method, body }) {
   const token = getFlowUsToken();
   const url = `${getFlowUsRestBase()}${path}`;
-  let response;
+  let upstream;
 
   try {
-    response = await fetch(url, {
+    upstream = await fetch(url, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -68,18 +84,20 @@ async function forwardFlowUs(path, { method, body }) {
       body: body === undefined ? undefined : JSON.stringify(body)
     });
   } catch (cause) {
-    return jsonResponse(
-      errorBody(
+    return {
+      status: 502,
+      body: errorBody(
         "flowus_network_error",
         `Vercel backend could not connect to FlowUs API: ${cause?.cause?.code || cause?.code || cause?.message || String(cause)}`
-      ),
-      502
-    );
+      )
+    };
   }
 
-  const text = await response.text();
-  const data = text ? parseJsonOrText(text) : {};
-  return jsonResponse(data, response.status);
+  const text = await upstream.text();
+  return {
+    status: upstream.status,
+    body: text ? parseJsonOrText(text) : {}
+  };
 }
 
 function authorize(request) {
@@ -91,7 +109,7 @@ function authorize(request) {
     };
   }
 
-  const header = getHeader(request, "authorization") || "";
+  const header = getHeader(request, "authorization");
   const actual = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
   if (actual !== expected) {
     return {
@@ -131,8 +149,8 @@ function assertId(value, name) {
 }
 
 async function readJsonBody(request) {
-  if (typeof request.json === "function") {
-    return request.json();
+  if (request.body && typeof request.body === "object" && !isReadable(request)) {
+    return request.body;
   }
 
   const text = await readTextBody(request);
@@ -140,10 +158,6 @@ async function readJsonBody(request) {
 }
 
 async function readTextBody(request) {
-  if (typeof request.text === "function") {
-    return request.text();
-  }
-
   const chunks = [];
   for await (const chunk of request) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -151,11 +165,12 @@ async function readTextBody(request) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+function isReadable(value) {
+  return typeof value.on === "function" || typeof value[Symbol.asyncIterator] === "function";
+}
+
 function getHeader(request, name) {
   const headers = request.headers || {};
-  if (typeof headers.get === "function") {
-    return headers.get(name);
-  }
   return headers[name] || headers[name.toLowerCase()] || "";
 }
 
@@ -175,22 +190,16 @@ function errorBody(code, message) {
   };
 }
 
-function jsonResponse(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      ...corsHeaders(),
-      "Content-Type": "application/json; charset=utf-8"
-    }
-  });
+function sendJson(response, body, status = 200) {
+  response.statusCode = status;
+  response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.end(JSON.stringify(body));
 }
 
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization"
-  };
+function setCorsHeaders(response) {
+  response.setHeader("Access-Control-Allow-Origin", "*");
+  response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
 function stripTrailingSlash(value) {
