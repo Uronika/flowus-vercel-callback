@@ -61,6 +61,42 @@ async function handleAction(payload) {
       });
     }
 
+    case "createPage":
+      assertObject(payload.body, "body");
+      return forwardFlowUs("/pages", {
+        method: "POST",
+        body: payload.body
+      });
+
+    case "updatePage":
+      assertId(payload.pageId, "pageId");
+      assertObject(payload.body, "body");
+      return forwardFlowUs(`/pages/${encodeURIComponent(payload.pageId)}`, {
+        method: "PATCH",
+        body: payload.body
+      });
+
+    case "appendBlockChildren":
+      assertId(payload.blockId, "blockId");
+      if (!Array.isArray(payload.children)) {
+        const error = new Error("Missing children.");
+        error.code = "invalid_args";
+        error.status = 400;
+        throw error;
+      }
+      return forwardFlowUs(`/blocks/${encodeURIComponent(payload.blockId)}/children`, {
+        method: "PATCH",
+        body: { children: payload.children }
+      });
+
+    case "updateBlock":
+      assertId(payload.blockId, "blockId");
+      assertObject(payload.body, "body");
+      return forwardFlowUs(`/blocks/${encodeURIComponent(payload.blockId)}`, {
+        method: "PATCH",
+        body: payload.body
+      });
+
     default:
       return {
         status: 400,
@@ -141,6 +177,15 @@ function getFlowUsRestBase() {
 
 function assertId(value, name) {
   if (!value || typeof value !== "string") {
+    const error = new Error(`Missing ${name}.`);
+    error.code = "invalid_args";
+    error.status = 400;
+    throw error;
+  }
+}
+
+function assertObject(value, name) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     const error = new Error(`Missing ${name}.`);
     error.code = "invalid_args";
     error.status = 400;
