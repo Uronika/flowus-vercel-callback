@@ -8,7 +8,7 @@ export function loadConfig(env = process.env) {
   const proxySecret = env.GTD_PROXY_SECRET || env.FLOWUS_PROXY_SECRET || "";
 
   return {
-    apiBase: stripTrailingSlash(env.FLOWUS_API_BASE || DEFAULT_FLOWUS_API_BASE),
+    apiBase: normalizeFlowUsRestBase(env.FLOWUS_REST_BASE || env.FLOWUS_API_BASE || DEFAULT_FLOWUS_API_BASE),
     proxyBase: stripTrailingSlash(proxyBase),
     proxySecret,
     token,
@@ -20,7 +20,7 @@ export function loadConfig(env = process.env) {
 export function requireToken(config) {
   if (config.proxyBase) {
     if (!config.proxySecret) {
-      const error = new Error("缺少 GTD 后端代理密钥。请设置 GTD_PROXY_SECRET 或 FLOWUS_PROXY_SECRET。");
+      const error = new Error("Missing GTD proxy secret. Set GTD_PROXY_SECRET or FLOWUS_PROXY_SECRET.");
       error.code = "config_error";
       throw error;
     }
@@ -28,10 +28,15 @@ export function requireToken(config) {
   }
 
   if (!config.token) {
-    const error = new Error("缺少 FlowUs 访问令牌或后端代理配置。请设置 FLOWUS_ACCESS_TOKEN，或设置 FLOWUS_PROXY_BASE + GTD_PROXY_SECRET。");
+    const error = new Error("Missing FlowUs access token or backend proxy config. Set FLOWUS_ACCESS_TOKEN, or FLOWUS_PROXY_BASE + GTD_PROXY_SECRET.");
     error.code = "config_error";
     throw error;
   }
+}
+
+function normalizeFlowUsRestBase(value) {
+  const base = stripTrailingSlash(value);
+  return base.endsWith("/v1") ? base : `${base}/v1`;
 }
 
 function stripTrailingSlash(value) {
