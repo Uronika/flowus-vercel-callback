@@ -1,12 +1,22 @@
 {
   "name": "flowus-vercel-callback",
   "version": "1.0.0",
-  "description": "Minimal Vercel callback for FlowUs",
+  "description": "FlowUs OAuth callback, GTD proxy, and read-only GTD dashboard",
+  "private": true,
   "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "check": "node --check ./src/config.js && node --check ./src/flowus-client.js && node --check ./src/task-mapper.js && node --check ./src/task-service.js && node --check ./app/api/gtd/route.js && node --check ./app/api/flowus/route.js && node --check ./app/api/tasks/route.js && node --check ./app/api/tasks/[id]/route.js"
+  },
   "engines": {
     "node": "24.x"
   },
   "dependencies": {
-    "axios": "^1.6.0"
+    "@tanstack/react-query": "^5.99.2",
+    "next": "^16.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
   }
 }

@@ -1,6 +1,5 @@
-node_modules
+node_modules/
+.git/
 .env
-.next
-.vercel
 .env*.local
 npm-debug.log*

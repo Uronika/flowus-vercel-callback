@@ -1,36 +1,31 @@
-export default async function handler(request, response) {
-  setCorsHeaders(response);
+export const dynamic = "force-dynamic";
 
-  if (request.method === "OPTIONS") {
-    response.statusCode = 204;
-    response.end();
-    return;
-  }
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization"
+};
 
-  if (request.method !== "POST") {
-    sendJson(response, errorBody("method_not_allowed", "Use POST."), 405);
-    return;
-  }
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
 
+export async function POST(request) {
   const authError = authorize(request);
-  if (authError) {
-    sendJson(response, authError.body, authError.status);
-    return;
-  }
+  if (authError) return json(authError.body, authError.status);
 
   let payload;
   try {
-    payload = await readJsonBody(request);
+    payload = await request.json();
   } catch {
-    sendJson(response, errorBody("invalid_json", "Request body must be JSON."), 400);
-    return;
+    return json(errorBody("invalid_json", "Request body must be JSON."), 400);
   }
 
   try {
     const result = await handleAction(payload);
-    sendJson(response, result.body, result.status);
+    return json(result.body, result.status);
   } catch (error) {
-    sendJson(response, errorBody(error.code || "proxy_error", error.message), error.status || 500);
+    return json(errorBody(error.code || "proxy_error", error.message), error.status || 500);
   }
 }
 
@@ -53,9 +48,7 @@ async function handleAction(payload) {
       assertId(payload.blockId, "blockId");
       const params = new URLSearchParams();
       params.set("page_size", String(payload.pageSize || 100));
-      if (payload.startCursor) {
-        params.set("start_cursor", payload.startCursor);
-      }
+      if (payload.startCursor) params.set("start_cursor", payload.startCursor);
       return forwardFlowUs(`/blocks/${encodeURIComponent(payload.blockId)}/children?${params.toString()}`, {
         method: "GET"
       });
@@ -145,7 +138,7 @@ function authorize(request) {
     };
   }
 
-  const header = getHeader(request, "authorization");
+  const header = request.headers.get("authorization") || "";
   const actual = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
   if (actual !== expected) {
     return {
@@ -193,32 +186,6 @@ function assertObject(value, name) {
   }
 }
 
-async function readJsonBody(request) {
-  if (request.body && typeof request.body === "object" && !isReadable(request)) {
-    return request.body;
-  }
-
-  const text = await readTextBody(request);
-  return JSON.parse(text);
-}
-
-async function readTextBody(request) {
-  const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-function isReadable(value) {
-  return typeof value.on === "function" || typeof value[Symbol.asyncIterator] === "function";
-}
-
-function getHeader(request, name) {
-  const headers = request.headers || {};
-  return headers[name] || headers[name.toLowerCase()] || "";
-}
-
 function parseJsonOrText(text) {
   try {
     return JSON.parse(text);
@@ -235,16 +202,11 @@ function errorBody(code, message) {
   };
 }
 
-function sendJson(response, body, status = 200) {
-  response.statusCode = status;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.end(JSON.stringify(body));
-}
-
-function setCorsHeaders(response) {
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+function json(body, status = 200) {
+  return Response.json(body, {
+    status,
+    headers: CORS_HEADERS
+  });
 }
 
 function stripTrailingSlash(value) {
