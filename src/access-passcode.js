@@ -141,10 +141,11 @@ async function readAccessState(client, pageId) {
 
 async function writeAccessState(client, pageId, content) {
   return client.appendBlockChildren(pageId, [{
-    object: "block",
     type: "paragraph",
-    paragraph: {
-      rich_text: [plainText(content)]
+    data: {
+      rich_text: [plainText(content)],
+      text_color: "default",
+      background_color: "default"
     }
   }]);
 }
@@ -283,7 +284,7 @@ function plainText(content) {
 }
 
 function blockText(block) {
-  const data = block[block.type] || {};
+  const data = block[block.type] || block.data || {};
   return (data.rich_text || [])
     .map((item) => item.plain_text || item.text?.content || "")
     .join("");
