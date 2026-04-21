@@ -7,8 +7,10 @@ import { Providers } from "./providers";
 const TEXT = {
   brand: "FlowUs GTD",
   title: "\u4efb\u52a1\u89c6\u56fe",
-  viewToken: "\u67e5\u770b\u53e3\u4ee4",
-  tokenPlaceholder: "\u7559\u7a7a\u6216\u8f93\u5165\u90e8\u7f72\u53e3\u4ee4",
+  viewToken: "\u8bbf\u95ee\u53e3\u4ee4",
+  tokenPlaceholder: "\u8f93\u5165 FlowUs \u91cc\u7684\u5f53\u524d\u53e3\u4ee4",
+  login: "\u8fdb\u5165",
+  logout: "\u9000\u51fa",
   refresh: "\u5237\u65b0",
   active: "\u5f85\u5904\u7406",
   done: "\u5df2\u5b8c\u6210",
@@ -27,6 +29,9 @@ const TEXT = {
   noSteps: "\u6682\u65e0\u6b65\u9aa4\u3002",
   failed: "\u8bfb\u53d6\u5931\u8d25",
   requestFailed: "\u8bf7\u6c42\u5931\u8d25\u3002",
+  loginRequired: "\u9700\u8981\u53e3\u4ee4",
+  loginHint: "\u8bf7\u6253\u5f00 FlowUs \u7684 GTD/\u5f53\u524d\u8bbf\u95ee\u53e3\u4ee4 \u9875\u9762\uff0c\u8f93\u5165\u6700\u65b0\u53e3\u4ee4\u3002",
+  loggingIn: "\u6b63\u5728\u6821\u9a8c\u3002",
   navLabel: "GTD \u6e05\u5355",
   taskListLabel: "\u4efb\u52a1\u5217\u8868",
   detailLabel: "\u4efb\u52a1\u8be6\u60c5"
@@ -61,13 +66,15 @@ export default function Page() {
 }
 
 function GtdDashboard() {
-  const [viewToken, setViewToken] = useStoredToken();
+  const [passcode, setPasscode] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [selectedList, setSelectedList] = useState("\u6267\u884c\u6e05\u5355");
   const [selectedTaskId, setSelectedTaskId] = useState("");
 
   const tasksQuery = useQuery({
-    queryKey: ["tasks", viewToken],
-    queryFn: () => fetchJson("/api/tasks", viewToken),
+    queryKey: ["tasks"],
+    queryFn: () => fetchJson("/api/tasks"),
     retry: false
   });
 
@@ -88,11 +95,16 @@ function GtdDashboard() {
   }, [selectedTaskId, visibleTasks]);
 
   const detailQuery = useQuery({
-    queryKey: ["task", selectedTaskId, viewToken],
-    queryFn: () => fetchJson(`/api/tasks/${selectedTaskId}`, viewToken),
+    queryKey: ["task", selectedTaskId],
+    queryFn: () => fetchJson(`/api/tasks/${selectedTaskId}`),
     enabled: Boolean(selectedTaskId),
     retry: false
   });
+
+  const needsLogin = tasksQuery.error?.code === "missing_session" ||
+    tasksQuery.error?.code === "stale_session" ||
+    tasksQuery.error?.code === "expired_session" ||
+    tasksQuery.error?.code === "invalid_session";
 
   const counts = countByList(tasks);
   const activeCount = tasks.filter((task) => !task.completed && task.list !== "\u56de\u6536\u7ad9").length;
@@ -107,29 +119,46 @@ function GtdDashboard() {
           <h1>{TEXT.title}</h1>
         </div>
         <div className="top-actions">
-          <label className="token-field">
-            <span>{TEXT.viewToken}</span>
-            <input
-              value={viewToken}
-              onChange={(event) => setViewToken(event.target.value)}
-              placeholder={TEXT.tokenPlaceholder}
-              type="password"
-            />
-          </label>
+          {needsLogin ? null : <button type="button" onClick={handleLogout}>{TEXT.logout}</button>}
           <button type="button" onClick={() => tasksQuery.refetch()}>
             {TEXT.refresh}
           </button>
         </div>
       </header>
 
-      <section className="summary-band">
+      {needsLogin ? (
+        <section className="auth-panel">
+          <div className="photo-strip" aria-hidden="true" />
+          <form className="auth-form" onSubmit={handleLogin}>
+            <p className="eyebrow">{TEXT.loginRequired}</p>
+            <h2>{TEXT.viewToken}</h2>
+            <p>{TEXT.loginHint}</p>
+            <label className="token-field">
+              <span>{TEXT.viewToken}</span>
+              <input
+                value={passcode}
+                onChange={(event) => setPasscode(event.target.value)}
+                placeholder={TEXT.tokenPlaceholder}
+                type="password"
+                autoComplete="current-password"
+              />
+            </label>
+            <button type="submit" disabled={isLoggingIn}>
+              {isLoggingIn ? TEXT.loggingIn : TEXT.login}
+            </button>
+            {loginError ? <p className="auth-error">{loginError}</p> : null}
+          </form>
+        </section>
+      ) : null}
+
+      {needsLogin ? null : <section className="summary-band">
         <div className="photo-strip" aria-hidden="true" />
         <Metric label={TEXT.active} value={activeCount} tone="green" />
         <Metric label={TEXT.done} value={doneCount} tone="blue" />
         <Metric label={TEXT.trash} value={counts["\u56de\u6536\u7ad9"] || 0} tone="red" />
-      </section>
+      </section>}
 
-      <section className="workspace">
+      {needsLogin ? null : <section className="workspace">
         <nav className="list-nav" aria-label={TEXT.navLabel}>
           {LISTS.map((list) => (
             <button
@@ -210,9 +239,40 @@ function GtdDashboard() {
             </>
           )}
         </aside>
-      </section>
+      </section>}
     </main>
   );
+
+  async function handleLogin(event) {
+    event.preventDefault();
+    setLoginError("");
+    setIsLoggingIn(true);
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ passcode })
+      });
+      const data = await response.json();
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error?.message || TEXT.requestFailed);
+      }
+      setPasscode("");
+      await tasksQuery.refetch();
+    } catch (error) {
+      setLoginError(error.message);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setSelectedTaskId("");
+    await tasksQuery.refetch();
+  }
 }
 
 function Metric({ label, value, tone }) {
@@ -244,28 +304,13 @@ function countByList(tasks) {
   }, {});
 }
 
-function useStoredToken() {
-  const [token, setTokenState] = useState("");
-
-  useEffect(() => {
-    setTokenState(window.localStorage.getItem("gtd-view-token") || "");
-  }, []);
-
-  function setToken(value) {
-    setTokenState(value);
-    window.localStorage.setItem("gtd-view-token", value);
-  }
-
-  return [token, setToken];
-}
-
-async function fetchJson(url, viewToken) {
-  const response = await fetch(url, {
-    headers: viewToken ? { "x-gtd-view-token": viewToken } : {}
-  });
+async function fetchJson(url) {
+  const response = await fetch(url);
   const data = await response.json();
   if (!response.ok || data.ok === false) {
-    throw new Error(data.error?.message || TEXT.requestFailed);
+    const error = new Error(data.error?.message || TEXT.requestFailed);
+    error.code = data.error?.code || "request_failed";
+    throw error;
   }
   return data;
 }

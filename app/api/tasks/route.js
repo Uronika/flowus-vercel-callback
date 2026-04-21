@@ -1,12 +1,13 @@
 import { fetchTasks } from "../../../src/task-service.js";
+import { validateAccessRequest } from "../../../src/access-passcode.js";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request) {
-  const authResponse = authorizeView(request);
-  if (authResponse) return authResponse;
-
   try {
+    const auth = await validateAccessRequest(request, process.env);
+    if (!auth.ok) return unauthorized(auth.code, auth.status);
+
     const tasks = await fetchTasks(process.env);
     return Response.json({
       ok: true,
@@ -18,20 +19,14 @@ export async function GET(request) {
   }
 }
 
-function authorizeView(request) {
-  const expected = process.env.GTD_WEB_VIEW_TOKEN || "";
-  if (!expected) return null;
-
-  const actual = request.headers.get("x-gtd-view-token") || "";
-  if (actual === expected) return null;
-
+function unauthorized(code, status = 401) {
   return Response.json({
     ok: false,
     error: {
-      code: "unauthorized",
-      message: "\u8bf7\u8f93\u5165\u67e5\u770b\u53e3\u4ee4\u3002"
+      code,
+      message: "\u8bf7\u5148\u8f93\u5165 FlowUs \u91cc\u7684\u5f53\u524d\u8bbf\u95ee\u53e3\u4ee4\u3002"
     }
-  }, { status: 401 });
+  }, { status });
 }
 
 function toErrorResponse(error) {

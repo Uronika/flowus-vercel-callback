@@ -1,6 +1,7 @@
 export const DEFAULT_FLOWUS_API_BASE = "https://api.flowus.cn/v1";
 export const DEFAULT_TASK_DATABASE_ID = "e5970787-783b-4afc-8819-184bd725109a";
 export const DEFAULT_GTD_ROOT_ID = "0a338201-e356-4462-b029-48a257b0d6ce";
+export const DEFAULT_ACCESS_PAGE_ID = "ef08b2f9-1295-415a-9628-2546e52dc738";
 
 export function loadConfig(env = process.env) {
   const token = env.FLOWUS_TOKEN || env.FLOWUS_ACCESS_TOKEN || "";
@@ -13,7 +14,8 @@ export function loadConfig(env = process.env) {
     proxySecret,
     token,
     taskDatabaseId: env.FLOWUS_TASK_DATABASE_ID || DEFAULT_TASK_DATABASE_ID,
-    gtdRootId: env.FLOWUS_GTD_ROOT_ID || DEFAULT_GTD_ROOT_ID
+    gtdRootId: env.FLOWUS_GTD_ROOT_ID || DEFAULT_GTD_ROOT_ID,
+    accessPageId: env.GTD_ACCESS_PAGE_ID || DEFAULT_ACCESS_PAGE_ID
   };
 }
 

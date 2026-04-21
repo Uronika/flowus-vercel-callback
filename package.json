@@ -8,7 +8,7 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "check": "node --check ./src/config.js && node --check ./src/flowus-client.js && node --check ./src/task-mapper.js && node --check ./src/task-service.js && node --check ./app/api/gtd/route.js && node --check ./app/api/flowus/route.js && node --check ./app/api/tasks/route.js && node --check ./app/api/tasks/[id]/route.js"
+    "check": "node --check ./src/config.js && node --check ./src/flowus-client.js && node --check ./src/task-mapper.js && node --check ./src/task-service.js && node --check ./src/access-passcode.js && node --check ./app/api/gtd/route.js && node --check ./app/api/flowus/route.js && node --check ./app/api/tasks/route.js && node --check ./app/api/tasks/[id]/route.js && node --check ./app/api/auth/login/route.js && node --check ./app/api/auth/logout/route.js && node --check ./app/api/auth/status/route.js && node --check ./app/api/auth/rotate/route.js && node --check ./app/api/cron/rotate-passcode/route.js"
   },
   "engines": {
     "node": "24.x"

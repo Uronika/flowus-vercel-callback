@@ -38,6 +38,28 @@ export class FlowUsClient {
     });
   }
 
+  async appendBlockChildren(blockId, children) {
+    if (this.config.proxyBase) {
+      return this.proxyRequest("appendBlockChildren", { blockId, children });
+    }
+
+    return this.request(`/blocks/${blockId}/children`, {
+      method: "PATCH",
+      body: { children }
+    });
+  }
+
+  async updateBlock(blockId, body = {}) {
+    if (this.config.proxyBase) {
+      return this.proxyRequest("updateBlock", { blockId, body });
+    }
+
+    return this.request(`/blocks/${blockId}`, {
+      method: "PATCH",
+      body
+    });
+  }
+
   async fetchAllDatabasePages(databaseId) {
     const pages = [];
     let startCursor = null;
