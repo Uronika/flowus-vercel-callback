@@ -131,22 +131,15 @@ async function readAccessState(client, pageId) {
   const text = blocks.map(blockText).filter(Boolean).join("\n");
 
   return {
-    blockId: findWritableBlock(blocks)?.id || "",
-    passcode: matchField(text, PASSCODE_RE),
-    updatedAt: matchField(text, UPDATED_RE),
-    expiresAt: matchField(text, EXPIRES_RE),
+    blockId: "",
+    passcode: matchLastField(text, PASSCODE_RE),
+    updatedAt: matchLastField(text, UPDATED_RE),
+    expiresAt: matchLastField(text, EXPIRES_RE),
     rawText: text
   };
 }
 
 async function writeAccessState(client, pageId, content) {
-  const blocks = await client.fetchAllBlockChildren(pageId);
-  const block = findWritableBlock(blocks);
-
-  if (block) {
-    return client.updateBlock(block.id, paragraphBody(content));
-  }
-
   return client.appendBlockChildren(pageId, [{
     object: "block",
     type: "paragraph",
@@ -264,20 +257,9 @@ function readCookie(header, name) {
     : "";
 }
 
-function matchField(text, regex) {
-  return (text.match(regex)?.[1] || "").trim();
-}
-
-function findWritableBlock(blocks) {
-  return blocks.find((block) => block.type === "paragraph") || null;
-}
-
-function paragraphBody(content) {
-  return {
-    paragraph: {
-      rich_text: [plainText(content)]
-    }
-  };
+function matchLastField(text, regex) {
+  const matches = [...text.matchAll(new RegExp(regex.source, "g"))];
+  return (matches.at(-1)?.[1] || "").trim();
 }
 
 function plainText(content) {
