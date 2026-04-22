@@ -42,7 +42,14 @@ const TEXT = {
   nextMonth: "\u4e0b\u4e00\u6708",
   expandDate: "\u9009\u62e9\u622a\u6b62\u65e5\u671f",
   addTask: "\u65b0\u589e\u4efb\u52a1",
-  addingTask: "\u6b63\u5728\u65b0\u589e\u4efb\u52a1\u3002"
+  addingTask: "\u6b63\u5728\u65b0\u589e\u4efb\u52a1\u3002",
+  addStep: "\u65b0\u589e\u6b65\u9aa4",
+  deleteStep: "\u5220\u9664\u6b65\u9aa4",
+  moveStepUp: "\u4e0a\u79fb\u6b65\u9aa4",
+  moveStepDown: "\u4e0b\u79fb\u6b65\u9aa4",
+  toggleStep: "\u5207\u6362\u6b65\u9aa4\u5b8c\u6210",
+  editTitle: "\u7f16\u8f91\u4efb\u52a1\u6807\u9898",
+  editStep: "\u7f16\u8f91\u6b65\u9aa4"
 };
 
 const LISTS = [
@@ -156,19 +163,33 @@ function GtdDashboard() {
       body: JSON.stringify(fields)
     }),
     onSuccess: (data) => {
-      const task = data.task;
-      queryClient.setQueryData(["task", task.id], data);
-      queryClient.setQueryData(["tasks"], (oldData) => {
-        if (!oldData?.tasks) return oldData;
-        return {
-          ...oldData,
-          tasks: oldData.tasks.map((item) => item.id === task.id ? toTaskListItem(task) : item)
-        };
-      });
-      setSelectedList(task.list);
-      setSelectedTaskId(task.id);
+      applyTaskData(data);
     }
   });
+  const addStepMutation = useMutation({
+    mutationFn: () => fetchJson(`/api/tasks/${selectedTaskId}/steps`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ text: "\u65b0\u6b65\u9aa4" })
+    }),
+    onSuccess: applyTaskData
+  });
+  const stepMutation = useMutation({
+    mutationFn: ({ stepId, method = "PATCH", body }) => fetchJson(`/api/tasks/${selectedTaskId}/steps/${stepId}`, {
+      method,
+      headers: method === "DELETE" ? undefined : {
+        "Content-Type": "application/json"
+      },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    }),
+    onSuccess: applyTaskData
+  });
+  const isWriting = taskMutation.isPending ||
+    createTaskMutation.isPending ||
+    addStepMutation.isPending ||
+    stepMutation.isPending;
 
   return (
     <main className="app-shell">
@@ -291,7 +312,16 @@ function GtdDashboard() {
           ) : (
             <>
               <p className="eyebrow">{selectedTask.shortId}</p>
-              <h2>{selectedTask.title || "-"}</h2>
+              <h2>
+                <EditableText
+                  ariaLabel={TEXT.editTitle}
+                  className="editable-title"
+                  disabled={isWriting}
+                  value={selectedTask.title}
+                  fallback="-"
+                  onSave={(value) => updateTaskField("title", value)}
+                />
+              </h2>
               <dl className="detail-grid">
                 <div>
                   <dt>{TEXT.list}</dt>
@@ -300,7 +330,7 @@ function GtdDashboard() {
                       label={TEXT.list}
                       value={selectedTask.list}
                       options={LISTS}
-                      disabled={taskMutation.isPending}
+                      disabled={isWriting}
                       onChange={(value) => updateTaskField("list", value)}
                     />
                   </dd>
@@ -312,7 +342,7 @@ function GtdDashboard() {
                       label={TEXT.status}
                       value={selectedTask.status}
                       options={STATUSES}
-                      disabled={taskMutation.isPending}
+                      disabled={isWriting}
                       onChange={(value) => updateTaskField("status", value)}
                     />
                   </dd>
@@ -324,7 +354,7 @@ function GtdDashboard() {
                       label={TEXT.priority}
                       value={selectedTask.priority}
                       options={PRIORITIES}
-                      disabled={taskMutation.isPending}
+                      disabled={isWriting}
                       onChange={(value) => updateTaskField("priority", value)}
                     />
                   </dd>
@@ -334,13 +364,13 @@ function GtdDashboard() {
                   <dd>
                     <CalendarPicker
                       value={selectedTask.dueDate}
-                      disabled={taskMutation.isPending}
+                      disabled={isWriting}
                       onChange={(value) => updateTaskField("dueDate", value)}
                     />
                   </dd>
                 </div>
               </dl>
-              {taskMutation.isPending ? <p className="save-state">{TEXT.saving}</p> : null}
+              {isWriting ? <p className="save-state">{TEXT.saving}</p> : null}
               {taskMutation.error ? (
                 <div className="error-block compact">
                   <strong>{TEXT.saveFailed}</strong>
@@ -353,18 +383,49 @@ function GtdDashboard() {
                   <span>{createTaskMutation.error.message}</span>
                 </div>
               ) : null}
+              {addStepMutation.error ? (
+                <div className="error-block compact">
+                  <strong>{TEXT.saveFailed}</strong>
+                  <span>{addStepMutation.error.message}</span>
+                </div>
+              ) : null}
+              {stepMutation.error ? (
+                <div className="error-block compact">
+                  <strong>{TEXT.saveFailed}</strong>
+                  <span>{stepMutation.error.message}</span>
+                </div>
+              ) : null}
               <div className="steps">
-                <h3>{TEXT.steps}</h3>
+                <div className="steps-head">
+                  <h3>{TEXT.steps}</h3>
+                  <button
+                    type="button"
+                    className="add-step-button"
+                    aria-label={TEXT.addStep}
+                    title={TEXT.addStep}
+                    disabled={isWriting}
+                    onClick={handleAddStep}
+                  >
+                    +
+                  </button>
+                </div>
                 {detailQuery.isLoading ? (
                   <p className="state-line">{TEXT.loadingSteps}</p>
                 ) : detailQuery.error ? (
                   <ErrorBlock error={detailQuery.error} />
                 ) : selectedTask.steps && selectedTask.steps.length > 0 ? (
-                  selectedTask.steps.map((step) => (
-                    <div className="step-row" key={step.id}>
-                      <span>{step.checked ? "\u2713" : ""}</span>
-                      <p>{step.text || "-"}</p>
-                    </div>
+                  selectedTask.steps.map((step, index) => (
+                    <StepRow
+                      key={step.id}
+                      step={step}
+                      index={index}
+                      total={selectedTask.steps.length}
+                      disabled={isWriting}
+                      onToggle={() => updateStep(step, { checked: !step.checked })}
+                      onTextSave={(value) => updateStep(step, { text: value })}
+                      onMove={(direction) => updateStep(step, { move: direction })}
+                      onDelete={() => deleteStep(step)}
+                    />
                   ))
                 ) : (
                   <p className="state-line">{TEXT.noSteps}</p>
@@ -412,6 +473,11 @@ function GtdDashboard() {
     createTaskMutation.mutate();
   }
 
+  function handleAddStep() {
+    if (!selectedTaskId) return;
+    addStepMutation.mutate();
+  }
+
   function toggleSort(key) {
     setSortState((current) => {
       if (current.key !== key) return { key, direction: "asc" };
@@ -422,6 +488,36 @@ function GtdDashboard() {
   function updateTaskField(field, value) {
     if (!selectedTask || selectedTask[field] === value) return;
     taskMutation.mutate({ [field]: value });
+  }
+
+  function updateStep(step, fields) {
+    if (!selectedTaskId || !step?.id) return;
+    stepMutation.mutate({
+      stepId: step.id,
+      body: fields
+    });
+  }
+
+  function deleteStep(step) {
+    if (!selectedTaskId || !step?.id) return;
+    stepMutation.mutate({
+      stepId: step.id,
+      method: "DELETE"
+    });
+  }
+
+  function applyTaskData(data) {
+    const task = data.task;
+    queryClient.setQueryData(["task", task.id], data);
+    queryClient.setQueryData(["tasks"], (oldData) => {
+      if (!oldData?.tasks) return oldData;
+      return {
+        ...oldData,
+        tasks: oldData.tasks.map((item) => item.id === task.id ? toTaskListItem(task) : item)
+      };
+    });
+    setSelectedList(task.list);
+    setSelectedTaskId(task.id);
   }
 }
 
@@ -466,6 +562,109 @@ function SelectField({ label, value, options, disabled, onChange }) {
         <option key={option} value={option}>{option}</option>
       ))}
     </select>
+  );
+}
+
+function EditableText({ ariaLabel, className = "", disabled, value, fallback, onSave }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(value || "");
+
+  useEffect(() => {
+    if (!isEditing) setDraft(value || "");
+  }, [isEditing, value]);
+
+  if (isEditing) {
+    return (
+      <textarea
+        aria-label={ariaLabel}
+        autoFocus
+        className={`editable-input ${className}`}
+        disabled={disabled}
+        rows={className.includes("step") ? 2 : 1}
+        value={draft}
+        onBlur={commit}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setDraft(value || "");
+            setIsEditing(false);
+          }
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            commit();
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      className={`editable-text ${className}`}
+      disabled={disabled}
+      onClick={() => setIsEditing(true)}
+    >
+      {value || fallback}
+    </button>
+  );
+
+  function commit() {
+    const next = draft.trim();
+    setIsEditing(false);
+    if (next && next !== value) onSave(next);
+  }
+}
+
+function StepRow({ step, index, total, disabled, onToggle, onTextSave, onMove, onDelete }) {
+  return (
+    <div className="step-row">
+      <button
+        type="button"
+        className={`step-check ${step.checked ? "checked" : ""}`}
+        aria-label={TEXT.toggleStep}
+        disabled={disabled}
+        onClick={onToggle}
+      >
+        {step.checked ? "\u2713" : ""}
+      </button>
+      <EditableText
+        ariaLabel={TEXT.editStep}
+        className="step-text"
+        disabled={disabled}
+        value={step.text}
+        fallback="-"
+        onSave={onTextSave}
+      />
+      <div className="step-actions">
+        <button
+          type="button"
+          aria-label={TEXT.moveStepUp}
+          disabled={disabled || index === 0}
+          onClick={() => onMove("up")}
+        >
+          {"\u2191"}
+        </button>
+        <button
+          type="button"
+          aria-label={TEXT.moveStepDown}
+          disabled={disabled || index === total - 1}
+          onClick={() => onMove("down")}
+        >
+          {"\u2193"}
+        </button>
+        <button
+          type="button"
+          className="delete-step"
+          aria-label={TEXT.deleteStep}
+          disabled={disabled}
+          onClick={onDelete}
+        >
+          {"\u00d7"}
+        </button>
+      </div>
+    </div>
   );
 }
 

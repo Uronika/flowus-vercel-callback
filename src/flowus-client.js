@@ -82,6 +82,16 @@ export class FlowUsClient {
     });
   }
 
+  async deleteBlock(blockId) {
+    if (this.config.proxyBase) {
+      return this.proxyRequest("deleteBlock", { blockId });
+    }
+
+    return this.request(`/blocks/${blockId}`, {
+      method: "DELETE"
+    });
+  }
+
   async fetchAllDatabasePages(databaseId) {
     const pages = [];
     let startCursor = null;

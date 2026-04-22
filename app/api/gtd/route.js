@@ -90,6 +90,12 @@ async function handleAction(payload) {
         body: payload.body
       });
 
+    case "deleteBlock":
+      assertId(payload.blockId, "blockId");
+      return forwardFlowUs(`/blocks/${encodeURIComponent(payload.blockId)}`, {
+        method: "DELETE"
+      });
+
     default:
       return {
         status: 400,

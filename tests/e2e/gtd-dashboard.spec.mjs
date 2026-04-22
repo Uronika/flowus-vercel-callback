@@ -46,12 +46,20 @@ test("task detail controls stay collapsed until opened", async ({ page }, testIn
   }
 
   await page.locator(".task-row").first().click();
+  await expect(page.locator(".editable-title")).toBeVisible();
+  await expect(page.locator(".add-step-button")).toBeVisible();
   await expect(page.locator(".detail-select")).toHaveCount(3);
   await expect(page.locator(".date-toggle")).toBeVisible();
   await expect(page.locator(".calendar-box")).toHaveCount(0);
 
   await page.locator(".date-toggle").click();
   await expect(page.locator(".calendar-box")).toBeVisible();
+
+  if (await page.locator(".step-row").count() > 0) {
+    await expect(page.locator(".step-row").first().locator(".step-check")).toBeVisible();
+    await expect(page.locator(".step-row").first().locator(".step-text")).toBeVisible();
+    await expect(page.locator(".step-row").first().locator(".step-actions button")).toHaveCount(3);
+  }
 });
 
 async function waitForTasksSettled(page) {

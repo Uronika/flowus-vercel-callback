@@ -16,6 +16,7 @@ import {
   PRIORITY_LOW,
   STATUS_DONE,
   STATUS_TODO,
+  resolveStepId,
   resolveTaskId
 } from "./task-mapper.js";
 
@@ -87,6 +88,49 @@ export async function updateTaskFields(taskId, fields = {}, env = process.env) {
   return fetchTaskDetail(task.id, env);
 }
 
+export async function addTaskStep(taskId, text = "", env = process.env) {
+  const { client, config } = createTaskClient(env);
+  const task = await resolveTaskForMutation(client, config, taskId);
+  const content = normalizeStepText(text, "\u65b0\u6b65\u9aa4");
+
+  await client.appendBlockChildren(task.id, [toDoBlock(content, false)]);
+  return fetchTaskDetail(task.id, env);
+}
+
+export async function updateTaskStep(taskId, stepId, fields = {}, env = process.env) {
+  const { client, config } = createTaskClient(env);
+  const task = await resolveTaskForMutation(client, config, taskId);
+  const detail = await fetchTaskDetail(task.id, env);
+  const step = resolveStepId(detail.steps || [], stepId);
+
+  if (fields.move) {
+    return moveTaskStepBySwap(client, detail, step.id, fields.move, env);
+  }
+
+  const nextText = Object.prototype.hasOwnProperty.call(fields, "text")
+    ? normalizeStepText(fields.text, step.text)
+    : step.text;
+  const nextChecked = Object.prototype.hasOwnProperty.call(fields, "checked")
+    ? Boolean(fields.checked)
+    : Boolean(step.checked);
+
+  await client.updateBlock(step.id, {
+    data: toDoData(nextText, nextChecked)
+  });
+
+  return maybeCompleteTaskWhenAllStepsDone(await fetchTaskDetail(task.id, env), env);
+}
+
+export async function deleteTaskStep(taskId, stepId, env = process.env) {
+  const { client, config } = createTaskClient(env);
+  const task = await resolveTaskForMutation(client, config, taskId);
+  const detail = await fetchTaskDetail(task.id, env);
+  const step = resolveStepId(detail.steps || [], stepId);
+
+  await client.deleteBlock(step.id);
+  return maybeCompleteTaskWhenAllStepsDone(await fetchTaskDetail(task.id, env), env);
+}
+
 function compareTasks(a, b) {
   const listDiff = listRank(a.list) - listRank(b.list);
   if (listDiff !== 0) return listDiff;
@@ -110,6 +154,10 @@ function listRank(list) {
 
 function buildTaskProperties(fields) {
   const properties = {};
+
+  if (Object.prototype.hasOwnProperty.call(fields, "title")) {
+    properties[PROP_TITLE] = titleProperty(normalizeTitle(fields.title));
+  }
 
   if (Object.prototype.hasOwnProperty.call(fields, "list")) {
     assertOneOf(fields.list, GTD_LISTS, "list", "\u6e05\u5355");
@@ -137,6 +185,50 @@ function buildTaskProperties(fields) {
   return properties;
 }
 
+async function resolveTaskForMutation(client, config, taskId) {
+  const pages = await client.fetchAllDatabasePages(config.taskDatabaseId);
+  return resolveTaskId(pages.map(mapPageToTask), taskId);
+}
+
+async function moveTaskStepBySwap(client, detail, stepId, direction, env) {
+  assertOneOf(direction, ["up", "down"], "step_move", "\u6b65\u9aa4\u79fb\u52a8\u65b9\u5411");
+  const steps = detail.steps || [];
+  const currentIndex = steps.findIndex((step) => step.id === stepId);
+
+  if (currentIndex === -1) {
+    const error = new Error("\u627e\u4e0d\u5230\u6b65\u9aa4\u3002");
+    error.code = "step_not_found";
+    error.status = 404;
+    throw error;
+  }
+
+  const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= steps.length) {
+    return detail;
+  }
+
+  const current = steps[currentIndex];
+  const target = steps[targetIndex];
+
+  await client.updateBlock(current.id, {
+    data: toDoData(target.text, target.checked)
+  });
+  await client.updateBlock(target.id, {
+    data: toDoData(current.text, current.checked)
+  });
+
+  return maybeCompleteTaskWhenAllStepsDone(await fetchTaskDetail(detail.id, env), env);
+}
+
+async function maybeCompleteTaskWhenAllStepsDone(task, env) {
+  const steps = task.steps || [];
+  if (steps.length === 0 || !steps.every((step) => step.checked) || task.status === STATUS_DONE) {
+    return task;
+  }
+
+  return updateTaskFields(task.id, { status: STATUS_DONE }, env);
+}
+
 function selectProperty(name) {
   return {
     type: "select",
@@ -156,6 +248,42 @@ function titleProperty(content) {
       plain_text: content,
       href: null
     }]
+  };
+}
+
+function toDoBlock(text, checked) {
+  return {
+    type: "to_do",
+    data: toDoData(text, checked)
+  };
+}
+
+function toDoData(text, checked) {
+  return {
+    rich_text: [plainText(text)],
+    checked: Boolean(checked),
+    text_color: "default",
+    background_color: "default"
+  };
+}
+
+function plainText(content) {
+  return {
+    type: "text",
+    text: {
+      content,
+      link: null
+    },
+    annotations: {
+      bold: false,
+      italic: false,
+      strikethrough: false,
+      underline: false,
+      code: false,
+      color: "default"
+    },
+    plain_text: content,
+    href: null
   };
 }
 
@@ -190,4 +318,30 @@ function assertOneOf(value, allowed, code, label) {
     error.status = 400;
     throw error;
   }
+}
+
+function normalizeTitle(value) {
+  const content = String(value || "").trim();
+  if (!content) {
+    const error = new Error("\u4efb\u52a1\u6807\u9898\u4e0d\u80fd\u4e3a\u7a7a\u3002");
+    error.code = "invalid_title";
+    error.status = 400;
+    throw error;
+  }
+  return assertRichTextLength(content, "invalid_title");
+}
+
+function normalizeStepText(value, fallback) {
+  const content = String(value || "").trim() || fallback;
+  return assertRichTextLength(content, "invalid_step_text");
+}
+
+function assertRichTextLength(content, code) {
+  if (content.length > 2000) {
+    const error = new Error("\u6587\u672c\u4e0d\u80fd\u8d85\u8fc7 2000 \u4e2a\u5b57\u7b26\u3002");
+    error.code = code;
+    error.status = 400;
+    throw error;
+  }
+  return content;
 }

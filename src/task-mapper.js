@@ -72,6 +72,25 @@ export function resolveTaskId(tasks, input) {
   return matches[0];
 }
 
+export function resolveStepId(steps, input) {
+  const matches = steps.filter((step) => step.id.startsWith(input));
+
+  if (matches.length === 0) {
+    const error = new Error(`\u627e\u4e0d\u5230\u6b65\u9aa4 ${input}`);
+    error.code = "step_not_found";
+    throw error;
+  }
+
+  if (matches.length > 1) {
+    const error = new Error(`\u6b65\u9aa4 ID ${input} \u5339\u914d\u5230\u591a\u4e2a\u6b65\u9aa4\uff0c\u8bf7\u8f93\u5165\u66f4\u957f\u7684 ID\u3002`);
+    error.code = "ambiguous_id";
+    error.matches = matches.map((step) => step.id);
+    throw error;
+  }
+
+  return matches[0];
+}
+
 export function shortId(id) {
   return String(id || "").slice(0, 8);
 }
