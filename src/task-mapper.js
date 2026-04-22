@@ -8,6 +8,10 @@ export const STATUS_TODO = "\u672a\u5f00\u59cb";
 export const STATUS_DOING = "\u8fdb\u884c\u4e2d";
 export const STATUS_DONE = "\u5df2\u5b8c\u6210";
 
+export const PRIORITY_LOW = "\u4f4e";
+export const PRIORITY_MEDIUM = "\u4e2d";
+export const PRIORITY_HIGH = "\u9ad8";
+
 export const PROP_TITLE = "\u4efb\u52a1\u540d\u79f0";
 export const PROP_LIST = "\u6e05\u5355";
 export const PROP_STATUS = "\u72b6\u6001";
@@ -16,6 +20,8 @@ export const PROP_DUE = "\u622a\u6b62\u65e5\u671f";
 export const PROP_COMPLETED = "\u5b8c\u6210";
 
 export const GTD_LISTS = [LIST_INBOX, LIST_EXEC, LIST_PROJECTS, LIST_WAITING, LIST_TRASH];
+export const GTD_STATUSES = [STATUS_TODO, STATUS_DOING, STATUS_DONE];
+export const GTD_PRIORITIES = [PRIORITY_LOW, PRIORITY_MEDIUM, PRIORITY_HIGH];
 
 export function mapPageToTask(page) {
   const properties = page.properties || {};
@@ -79,7 +85,7 @@ function readSelect(property) {
 }
 
 function readDate(property) {
-  return property?.date?.start || null;
+  return normalizeDate(property?.date?.start);
 }
 
 function readCheckbox(property) {
@@ -88,6 +94,13 @@ function readCheckbox(property) {
 
 function readRichText(richText = []) {
   return richText.map((item) => item.plain_text || item.text?.content || "").join("");
+}
+
+function normalizeDate(value) {
+  if (!value || typeof value !== "string") return null;
+  const match = value.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+  if (!match) return value;
+  return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
 function deriveCompleted(status, checkbox) {

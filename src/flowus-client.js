@@ -24,6 +24,17 @@ export class FlowUsClient {
     });
   }
 
+  async updatePage(pageId, body = {}) {
+    if (this.config.proxyBase) {
+      return this.proxyRequest("updatePage", { pageId, body });
+    }
+
+    return this.request(`/pages/${pageId}`, {
+      method: "PATCH",
+      body
+    });
+  }
+
   async getBlockChildren(blockId, { pageSize = 100, startCursor = null } = {}) {
     if (this.config.proxyBase) {
       return this.proxyRequest("getBlockChildren", { blockId, pageSize, startCursor });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Providers } from "./providers";
 
 const TEXT = {
@@ -34,7 +34,12 @@ const TEXT = {
   loggingIn: "\u6b63\u5728\u6821\u9a8c\u3002",
   navLabel: "GTD \u6e05\u5355",
   taskListLabel: "\u4efb\u52a1\u5217\u8868",
-  detailLabel: "\u4efb\u52a1\u8be6\u60c5"
+  detailLabel: "\u4efb\u52a1\u8be6\u60c5",
+  saving: "\u6b63\u5728\u5199\u5165 FlowUs\u3002",
+  saveFailed: "\u5199\u5165\u5931\u8d25",
+  clearDate: "\u6e05\u9664\u65e5\u671f",
+  previousMonth: "\u4e0a\u4e00\u6708",
+  nextMonth: "\u4e0b\u4e00\u6708"
 };
 
 const LISTS = [
@@ -57,6 +62,9 @@ const STATUS_CLASS = {
   "\u5df2\u5b8c\u6210": "done"
 };
 
+const STATUSES = ["\u672a\u5f00\u59cb", "\u8fdb\u884c\u4e2d", "\u5df2\u5b8c\u6210"];
+const PRIORITIES = ["\u4f4e", "\u4e2d", "\u9ad8"];
+
 export default function Page() {
   return (
     <Providers>
@@ -66,6 +74,7 @@ export default function Page() {
 }
 
 function GtdDashboard() {
+  const queryClient = useQueryClient();
   const [passcode, setPasscode] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -110,6 +119,28 @@ function GtdDashboard() {
   const activeCount = tasks.filter((task) => !task.completed && task.list !== "\u56de\u6536\u7ad9").length;
   const doneCount = tasks.filter((task) => task.completed && task.list !== "\u56de\u6536\u7ad9").length;
   const selectedTask = detailQuery.data?.task || tasks.find((task) => task.id === selectedTaskId);
+  const taskMutation = useMutation({
+    mutationFn: (fields) => fetchJson(`/api/tasks/${selectedTaskId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(fields)
+    }),
+    onSuccess: (data) => {
+      const task = data.task;
+      queryClient.setQueryData(["task", task.id], data);
+      queryClient.setQueryData(["tasks"], (oldData) => {
+        if (!oldData?.tasks) return oldData;
+        return {
+          ...oldData,
+          tasks: oldData.tasks.map((item) => item.id === task.id ? toTaskListItem(task) : item)
+        };
+      });
+      setSelectedList(task.list);
+      setSelectedTaskId(task.id);
+    }
+  });
 
   return (
     <main className="app-shell">
@@ -197,7 +228,7 @@ function GtdDashboard() {
                 className={`task-row ${task.id === selectedTaskId ? "selected" : ""}`}
                 onClick={() => setSelectedTaskId(task.id)}
               >
-                <span className="task-title">{task.title || "-"}</span>
+                <span className={`task-title ${priorityClass(task.priority)}`}>{task.title || "-"}</span>
                 <StatusPill status={task.status} />
                 <span>{task.priority || "-"}</span>
                 <span>{task.dueDate || "-"}</span>
@@ -214,11 +245,60 @@ function GtdDashboard() {
               <p className="eyebrow">{selectedTask.shortId}</p>
               <h2>{selectedTask.title || "-"}</h2>
               <dl className="detail-grid">
-                <div><dt>{TEXT.list}</dt><dd>{selectedTask.list || "-"}</dd></div>
-                <div><dt>{TEXT.status}</dt><dd>{selectedTask.status || "-"}</dd></div>
-                <div><dt>{TEXT.priority}</dt><dd>{selectedTask.priority || "-"}</dd></div>
-                <div><dt>{TEXT.dueDate}</dt><dd>{selectedTask.dueDate || "-"}</dd></div>
+                <div>
+                  <dt>{TEXT.list}</dt>
+                  <dd>
+                    <SelectField
+                      label={TEXT.list}
+                      value={selectedTask.list}
+                      options={LISTS}
+                      disabled={taskMutation.isPending}
+                      onChange={(value) => updateTaskField("list", value)}
+                    />
+                  </dd>
+                </div>
+                <div>
+                  <dt>{TEXT.status}</dt>
+                  <dd>
+                    <SelectField
+                      label={TEXT.status}
+                      value={selectedTask.status}
+                      options={STATUSES}
+                      disabled={taskMutation.isPending}
+                      onChange={(value) => updateTaskField("status", value)}
+                    />
+                  </dd>
+                </div>
+                <div>
+                  <dt>{TEXT.priority}</dt>
+                  <dd>
+                    <SelectField
+                      label={TEXT.priority}
+                      value={selectedTask.priority}
+                      options={PRIORITIES}
+                      disabled={taskMutation.isPending}
+                      onChange={(value) => updateTaskField("priority", value)}
+                    />
+                  </dd>
+                </div>
+                <div className="date-detail">
+                  <dt>{TEXT.dueDate}</dt>
+                  <dd>
+                    <CalendarPicker
+                      value={selectedTask.dueDate}
+                      disabled={taskMutation.isPending}
+                      onChange={(value) => updateTaskField("dueDate", value)}
+                    />
+                  </dd>
+                </div>
               </dl>
+              {taskMutation.isPending ? <p className="save-state">{TEXT.saving}</p> : null}
+              {taskMutation.error ? (
+                <div className="error-block compact">
+                  <strong>{TEXT.saveFailed}</strong>
+                  <span>{taskMutation.error.message}</span>
+                </div>
+              ) : null}
               <div className="steps">
                 <h3>{TEXT.steps}</h3>
                 {detailQuery.isLoading ? (
@@ -273,6 +353,11 @@ function GtdDashboard() {
     setSelectedTaskId("");
     await tasksQuery.refetch();
   }
+
+  function updateTaskField(field, value) {
+    if (!selectedTask || selectedTask[field] === value) return;
+    taskMutation.mutate({ [field]: value });
+  }
 }
 
 function Metric({ label, value, tone }) {
@@ -286,6 +371,90 @@ function Metric({ label, value, tone }) {
 
 function StatusPill({ status }) {
   return <span className={`status-pill status-${STATUS_CLASS[status] || "empty"}`}>{STATUS_TEXT[status] || "-"}</span>;
+}
+
+function SelectField({ label, value, options, disabled, onChange }) {
+  return (
+    <select
+      aria-label={label}
+      className="detail-select"
+      disabled={disabled}
+      value={value || ""}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      {options.map((option) => (
+        <option key={option} value={option}>{option}</option>
+      ))}
+    </select>
+  );
+}
+
+function CalendarPicker({ value, disabled, onChange }) {
+  const initialMonth = useMemo(() => parseIsoDate(value) || new Date(), [value]);
+  const [viewDate, setViewDate] = useState(initialMonth);
+
+  useEffect(() => {
+    setViewDate(initialMonth);
+  }, [initialMonth]);
+
+  const selected = parseIsoDate(value);
+  const days = buildCalendarDays(viewDate);
+
+  return (
+    <div className="calendar-box">
+      <div className="selected-date">{value || "-"}</div>
+      <div className="calendar-head">
+        <button
+          type="button"
+          aria-label={TEXT.previousMonth}
+          disabled={disabled}
+          onClick={() => setViewDate(addMonths(viewDate, -1))}
+        >
+          {"\u2039"}
+        </button>
+        <strong>{formatMonth(viewDate)}</strong>
+        <button
+          type="button"
+          aria-label={TEXT.nextMonth}
+          disabled={disabled}
+          onClick={() => setViewDate(addMonths(viewDate, 1))}
+        >
+          {"\u203a"}
+        </button>
+      </div>
+      <div className="calendar-weekdays" aria-hidden="true">
+        {["\u65e5", "\u4e00", "\u4e8c", "\u4e09", "\u56db", "\u4e94", "\u516d"].map((day) => (
+          <span key={day}>{day}</span>
+        ))}
+      </div>
+      <div className="calendar-days">
+        {days.map((day) => (
+          <button
+            key={day.iso}
+            type="button"
+            className={[
+              "calendar-day",
+              day.isCurrentMonth ? "" : "outside",
+              isSameDate(day.date, selected) ? "selected" : "",
+              isSameDate(day.date, new Date()) ? "today" : ""
+            ].filter(Boolean).join(" ")}
+            disabled={disabled}
+            onClick={() => onChange(day.iso)}
+          >
+            {day.date.getDate()}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="clear-date"
+        disabled={disabled || !value}
+        onClick={() => onChange(null)}
+      >
+        {TEXT.clearDate}
+      </button>
+    </div>
+  );
 }
 
 function ErrorBlock({ error }) {
@@ -304,8 +473,63 @@ function countByList(tasks) {
   }, {});
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url);
+function toTaskListItem(task) {
+  const { steps, ...listItem } = task;
+  return listItem;
+}
+
+function priorityClass(priority) {
+  if (priority === "\u9ad8") return "priority-high";
+  if (priority === "\u4e2d") return "priority-medium";
+  return "priority-low";
+}
+
+function parseIsoDate(value) {
+  if (!value || typeof value !== "string") return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatMonth(date) {
+  return `${date.getFullYear()}\u5e74${date.getMonth() + 1}\u6708`;
+}
+
+function addMonths(date, offset) {
+  return new Date(date.getFullYear(), date.getMonth() + offset, 1);
+}
+
+function buildCalendarDays(viewDate) {
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const start = new Date(year, month, 1 - firstDay.getDay());
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
+    return {
+      date,
+      iso: formatDate(date),
+      isCurrentMonth: date.getMonth() === month
+    };
+  });
+}
+
+function isSameDate(left, right) {
+  return Boolean(left && right) &&
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate();
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
   const data = await response.json();
   if (!response.ok || data.ok === false) {
     const error = new Error(data.error?.message || TEXT.requestFailed);
