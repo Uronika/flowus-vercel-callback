@@ -14,6 +14,17 @@ export class FlowUsClient {
     });
   }
 
+  async createPage(body = {}) {
+    if (this.config.proxyBase) {
+      return this.proxyRequest("createPage", { body });
+    }
+
+    return this.request("/pages", {
+      method: "POST",
+      body
+    });
+  }
+
   async getPage(pageId) {
     if (this.config.proxyBase) {
       return this.proxyRequest("getPage", { pageId });

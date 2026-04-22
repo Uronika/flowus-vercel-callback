@@ -7,12 +7,15 @@ import {
   LIST_TRASH,
   mapBlockToStep,
   mapPageToTask,
+  PROP_TITLE,
   PROP_COMPLETED,
   PROP_DUE,
   PROP_LIST,
   PROP_PRIORITY,
   PROP_STATUS,
+  PRIORITY_LOW,
   STATUS_DONE,
+  STATUS_TODO,
   resolveTaskId
 } from "./task-mapper.js";
 
@@ -42,6 +45,29 @@ export async function fetchTaskDetail(taskId, env = process.env) {
     ...mapPageToTask(page),
     steps
   };
+}
+
+export async function createDefaultTask({ list, title = "\u9ed8\u8ba4\u4efb\u52a1" } = {}, env = process.env) {
+  const { client, config } = createTaskClient(env);
+  assertOneOf(list, GTD_LISTS, "list", "\u6e05\u5355");
+
+  const page = await client.createPage({
+    parent: {
+      database_id: config.taskDatabaseId
+    },
+    properties: {
+      [PROP_TITLE]: titleProperty(title),
+      [PROP_LIST]: selectProperty(list),
+      [PROP_STATUS]: selectProperty(STATUS_TODO),
+      [PROP_PRIORITY]: selectProperty(PRIORITY_LOW),
+      [PROP_COMPLETED]: {
+        type: "checkbox",
+        checkbox: false
+      }
+    }
+  });
+
+  return fetchTaskDetail(page.id, env);
 }
 
 export async function updateTaskFields(taskId, fields = {}, env = process.env) {
@@ -115,6 +141,21 @@ function selectProperty(name) {
   return {
     type: "select",
     select: { name }
+  };
+}
+
+function titleProperty(content) {
+  return {
+    type: "title",
+    title: [{
+      type: "text",
+      text: {
+        content,
+        link: null
+      },
+      plain_text: content,
+      href: null
+    }]
   };
 }
 

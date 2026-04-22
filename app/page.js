@@ -40,7 +40,9 @@ const TEXT = {
   clearDate: "\u6e05\u9664\u65e5\u671f",
   previousMonth: "\u4e0a\u4e00\u6708",
   nextMonth: "\u4e0b\u4e00\u6708",
-  expandDate: "\u9009\u62e9\u622a\u6b62\u65e5\u671f"
+  expandDate: "\u9009\u62e9\u622a\u6b62\u65e5\u671f",
+  addTask: "\u65b0\u589e\u4efb\u52a1",
+  addingTask: "\u6b63\u5728\u65b0\u589e\u4efb\u52a1\u3002"
 };
 
 const LISTS = [
@@ -81,6 +83,7 @@ function GtdDashboard() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [selectedList, setSelectedList] = useState("\u6267\u884c\u6e05\u5355");
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [sortState, setSortState] = useState({ key: "", direction: "asc" });
 
   const tasksQuery = useQuery({
     queryKey: ["tasks"],
@@ -90,8 +93,10 @@ function GtdDashboard() {
 
   const tasks = tasksQuery.data?.tasks || [];
   const visibleTasks = useMemo(() => {
-    return tasks.filter((task) => task.list === selectedList);
-  }, [tasks, selectedList]);
+    const filtered = tasks.filter((task) => task.list === selectedList);
+    if (!sortState.key) return filtered;
+    return [...filtered].sort((left, right) => compareBySort(left, right, sortState));
+  }, [tasks, selectedList, sortState]);
 
   useEffect(() => {
     if (!selectedTaskId && visibleTasks[0]) {
@@ -120,6 +125,28 @@ function GtdDashboard() {
   const activeCount = tasks.filter((task) => !task.completed && task.list !== "\u56de\u6536\u7ad9").length;
   const doneCount = tasks.filter((task) => task.completed && task.list !== "\u56de\u6536\u7ad9").length;
   const selectedTask = detailQuery.data?.task || tasks.find((task) => task.id === selectedTaskId);
+  const createTaskMutation = useMutation({
+    mutationFn: () => fetchJson("/api/tasks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ list: selectedList })
+    }),
+    onSuccess: (data) => {
+      const task = data.task;
+      queryClient.setQueryData(["task", task.id], data);
+      queryClient.setQueryData(["tasks"], (oldData) => {
+        if (!oldData?.tasks) return oldData;
+        return {
+          ...oldData,
+          tasks: [...oldData.tasks, toTaskListItem(task)]
+        };
+      });
+      setSelectedList(task.list);
+      setSelectedTaskId(task.id);
+    }
+  });
   const taskMutation = useMutation({
     mutationFn: (fields) => fetchJson(`/api/tasks/${selectedTaskId}`, {
       method: "PATCH",
@@ -210,15 +237,35 @@ function GtdDashboard() {
 
         <section className="task-table" aria-label={TEXT.taskListLabel}>
           <div className="table-head">
-            <span>{TEXT.task}</span>
-            <span>{TEXT.status}</span>
-            <span>{TEXT.priority}</span>
-            <span>{TEXT.due}</span>
+            <div className="head-cell task-head-cell">
+              <SortButton label={TEXT.task} sortKey="title" sortState={sortState} onSort={toggleSort} />
+              <button
+                type="button"
+                className="add-task-button"
+                aria-label={TEXT.addTask}
+                title={TEXT.addTask}
+                disabled={createTaskMutation.isPending}
+                onClick={handleCreateTask}
+              >
+                +
+              </button>
+            </div>
+            <div className="head-cell">
+              <SortButton label={TEXT.status} sortKey="status" sortState={sortState} onSort={toggleSort} />
+            </div>
+            <div className="head-cell">
+              <SortButton label={TEXT.priority} sortKey="priority" sortState={sortState} onSort={toggleSort} />
+            </div>
+            <div className="head-cell">
+              <SortButton label={TEXT.due} sortKey="dueDate" sortState={sortState} onSort={toggleSort} />
+            </div>
           </div>
           {tasksQuery.isLoading ? (
             <p className="state-line">{TEXT.loading}</p>
           ) : tasksQuery.error ? (
             <ErrorBlock error={tasksQuery.error} />
+          ) : createTaskMutation.isPending ? (
+            <p className="state-line">{TEXT.addingTask}</p>
           ) : visibleTasks.length === 0 ? (
             <p className="state-line">{TEXT.noTasks}</p>
           ) : (
@@ -300,6 +347,12 @@ function GtdDashboard() {
                   <span>{taskMutation.error.message}</span>
                 </div>
               ) : null}
+              {createTaskMutation.error ? (
+                <div className="error-block compact">
+                  <strong>{TEXT.saveFailed}</strong>
+                  <span>{createTaskMutation.error.message}</span>
+                </div>
+              ) : null}
               <div className="steps">
                 <h3>{TEXT.steps}</h3>
                 {detailQuery.isLoading ? (
@@ -355,6 +408,17 @@ function GtdDashboard() {
     await tasksQuery.refetch();
   }
 
+  function handleCreateTask() {
+    createTaskMutation.mutate();
+  }
+
+  function toggleSort(key) {
+    setSortState((current) => {
+      if (current.key !== key) return { key, direction: "asc" };
+      return { key, direction: current.direction === "asc" ? "desc" : "asc" };
+    });
+  }
+
   function updateTaskField(field, value) {
     if (!selectedTask || selectedTask[field] === value) return;
     taskMutation.mutate({ [field]: value });
@@ -372,6 +436,21 @@ function Metric({ label, value, tone }) {
 
 function StatusPill({ status }) {
   return <span className={`status-pill status-${STATUS_CLASS[status] || "empty"}`}>{STATUS_TEXT[status] || "-"}</span>;
+}
+
+function SortButton({ label, sortKey, sortState, onSort }) {
+  const isActive = sortState.key === sortKey;
+  const indicator = isActive ? (sortState.direction === "asc" ? "\u25b2" : "\u25bc") : "";
+  return (
+    <button
+      type="button"
+      className={`sort-button ${isActive ? "active" : ""}`}
+      onClick={() => onSort(sortKey)}
+    >
+      <span>{label}</span>
+      <span aria-hidden="true">{indicator}</span>
+    </button>
+  );
 }
 
 function SelectField({ label, value, options, disabled, onChange }) {
@@ -504,6 +583,42 @@ function priorityClass(priority) {
   if (priority === "\u9ad8") return "priority-high";
   if (priority === "\u4e2d") return "priority-medium";
   return "priority-low";
+}
+
+function compareBySort(left, right, sortState) {
+  const base = compareSortValue(left, right, sortState.key);
+  if (base === 0) return (left.title || "").localeCompare(right.title || "", "zh-Hans");
+  return sortState.direction === "desc" ? -base : base;
+}
+
+function compareSortValue(left, right, key) {
+  if (key === "title") {
+    return (left.title || "").localeCompare(right.title || "", "zh-Hans");
+  }
+
+  if (key === "status") {
+    return rankValue(left.status, STATUSES) - rankValue(right.status, STATUSES);
+  }
+
+  if (key === "priority") {
+    return rankValue(left.priority, ["\u9ad8", "\u4e2d", "\u4f4e"]) - rankValue(right.priority, ["\u9ad8", "\u4e2d", "\u4f4e"]);
+  }
+
+  if (key === "dueDate") {
+    const leftDate = left.dueDate || "";
+    const rightDate = right.dueDate || "";
+    if (!leftDate && !rightDate) return 0;
+    if (!leftDate) return 1;
+    if (!rightDate) return -1;
+    return leftDate.localeCompare(rightDate);
+  }
+
+  return 0;
+}
+
+function rankValue(value, order) {
+  const index = order.indexOf(value);
+  return index === -1 ? 99 : index;
 }
 
 function parseIsoDate(value) {

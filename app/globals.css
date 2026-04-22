@@ -249,6 +249,67 @@ select {
   padding: 12px 14px;
 }
 
+.head-cell,
+.task-head-cell {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.task-head-cell {
+  justify-content: space-between;
+}
+
+.sort-button,
+.add-task-button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sort-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 4px;
+  text-align: left;
+}
+
+.sort-button.active {
+  color: var(--ink);
+}
+
+.sort-button span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.add-task-button {
+  color: var(--ink);
+  flex: 0 0 auto;
+  font-weight: 700;
+  height: 24px;
+  line-height: 1;
+  padding: 0;
+  width: 24px;
+}
+
+.sort-button:hover,
+.add-task-button:hover {
+  background: #e9f4ed;
+  border-color: #bdd9c8;
+}
+
+.sort-button:disabled,
+.add-task-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .task-row {
   align-items: center;
   background: transparent;
@@ -544,8 +605,8 @@ select {
     grid-template-columns: minmax(130px, 1fr) 88px;
   }
 
-  .table-head span:nth-child(3),
-  .table-head span:nth-child(4),
+  .table-head .head-cell:nth-child(3),
+  .table-head .head-cell:nth-child(4),
   .task-row > span:nth-child(3),
   .task-row > span:nth-child(4) {
     display: none;
