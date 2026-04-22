@@ -39,7 +39,8 @@ const TEXT = {
   saveFailed: "\u5199\u5165\u5931\u8d25",
   clearDate: "\u6e05\u9664\u65e5\u671f",
   previousMonth: "\u4e0a\u4e00\u6708",
-  nextMonth: "\u4e0b\u4e00\u6708"
+  nextMonth: "\u4e0b\u4e00\u6708",
+  expandDate: "\u9009\u62e9\u622a\u6b62\u65e5\u671f"
 };
 
 const LISTS = [
@@ -391,6 +392,7 @@ function SelectField({ label, value, options, disabled, onChange }) {
 
 function CalendarPicker({ value, disabled, onChange }) {
   const initialMonth = useMemo(() => parseIsoDate(value) || new Date(), [value]);
+  const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(initialMonth);
 
   useEffect(() => {
@@ -401,58 +403,78 @@ function CalendarPicker({ value, disabled, onChange }) {
   const days = buildCalendarDays(viewDate);
 
   return (
-    <div className="calendar-box">
-      <div className="selected-date">{value || "-"}</div>
-      <div className="calendar-head">
-        <button
-          type="button"
-          aria-label={TEXT.previousMonth}
-          disabled={disabled}
-          onClick={() => setViewDate(addMonths(viewDate, -1))}
-        >
-          {"\u2039"}
-        </button>
-        <strong>{formatMonth(viewDate)}</strong>
-        <button
-          type="button"
-          aria-label={TEXT.nextMonth}
-          disabled={disabled}
-          onClick={() => setViewDate(addMonths(viewDate, 1))}
-        >
-          {"\u203a"}
-        </button>
-      </div>
-      <div className="calendar-weekdays" aria-hidden="true">
-        {["\u65e5", "\u4e00", "\u4e8c", "\u4e09", "\u56db", "\u4e94", "\u516d"].map((day) => (
-          <span key={day}>{day}</span>
-        ))}
-      </div>
-      <div className="calendar-days">
-        {days.map((day) => (
-          <button
-            key={day.iso}
-            type="button"
-            className={[
-              "calendar-day",
-              day.isCurrentMonth ? "" : "outside",
-              isSameDate(day.date, selected) ? "selected" : "",
-              isSameDate(day.date, new Date()) ? "today" : ""
-            ].filter(Boolean).join(" ")}
-            disabled={disabled}
-            onClick={() => onChange(day.iso)}
-          >
-            {day.date.getDate()}
-          </button>
-        ))}
-      </div>
+    <div className="date-picker">
       <button
         type="button"
-        className="clear-date"
-        disabled={disabled || !value}
-        onClick={() => onChange(null)}
+        className="date-toggle"
+        aria-expanded={isOpen}
+        aria-label={TEXT.expandDate}
+        disabled={disabled}
+        onClick={() => setIsOpen((open) => !open)}
       >
-        {TEXT.clearDate}
+        <span>{value || "-"}</span>
+        <span aria-hidden="true">{isOpen ? "\u25b2" : "\u25bc"}</span>
       </button>
+      {isOpen ? (
+        <div className="calendar-box">
+          <div className="calendar-head">
+            <button
+              type="button"
+              aria-label={TEXT.previousMonth}
+              disabled={disabled}
+              onClick={() => setViewDate(addMonths(viewDate, -1))}
+            >
+              {"\u2039"}
+            </button>
+            <strong>{formatMonth(viewDate)}</strong>
+            <button
+              type="button"
+              aria-label={TEXT.nextMonth}
+              disabled={disabled}
+              onClick={() => setViewDate(addMonths(viewDate, 1))}
+            >
+              {"\u203a"}
+            </button>
+          </div>
+          <div className="calendar-weekdays" aria-hidden="true">
+            {["\u65e5", "\u4e00", "\u4e8c", "\u4e09", "\u56db", "\u4e94", "\u516d"].map((day) => (
+              <span key={day}>{day}</span>
+            ))}
+          </div>
+          <div className="calendar-days">
+            {days.map((day) => (
+              <button
+                key={day.iso}
+                type="button"
+                className={[
+                  "calendar-day",
+                  day.isCurrentMonth ? "" : "outside",
+                  isSameDate(day.date, selected) ? "selected" : "",
+                  isSameDate(day.date, new Date()) ? "today" : ""
+                ].filter(Boolean).join(" ")}
+                disabled={disabled}
+                onClick={() => {
+                  setIsOpen(false);
+                  onChange(day.iso);
+                }}
+              >
+                {day.date.getDate()}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="clear-date"
+            disabled={disabled || !value}
+            onClick={() => {
+              setIsOpen(false);
+              onChange(null);
+            }}
+          >
+            {TEXT.clearDate}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

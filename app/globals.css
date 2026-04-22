@@ -338,6 +338,7 @@ select {
 }
 
 .detail-select:disabled,
+.date-toggle:disabled,
 .calendar-box button:disabled {
   cursor: wait;
   opacity: 0.65;
@@ -367,20 +368,36 @@ select {
   margin: -2px 0 14px;
 }
 
+.date-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.date-toggle {
+  align-items: center;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 6px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.date-toggle span:first-child {
+  overflow-wrap: anywhere;
+}
+
 .calendar-box {
   border: 1px solid #9fa59d;
   border-radius: 0;
   display: grid;
   gap: 6px;
   padding: 8px;
-}
-
-.selected-date {
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 13px;
-  min-height: 22px;
-  padding-bottom: 4px;
 }
 
 .calendar-head {
